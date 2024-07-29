@@ -7,7 +7,7 @@ canvas.height = window.innerHeight;
 const SIGNAL_RUN = 0;
 const SIGNAL_PAUSE = 1;
 const SIGNAL_READY = 2;
-const PARTICLE_COUNT = 1_000_000;
+const PARTICLE_COUNT = 10_000_000;
 const CPU_CORES = navigator.hardwareConcurrency;
 const chunkSize = Math.floor(PARTICLE_COUNT/CPU_CORES);
 const workerPool = [];
@@ -18,7 +18,8 @@ const sabParticles = new SharedArrayBuffer(PARTICLE_COUNT * byte_stride);
 const sabViewParticles = window.sabViewParticles = new Float32Array(sabParticles);
 const sabSignals = new SharedArrayBuffer(CPU_CORES);
 const sabViewSignals = new Uint8Array(sabSignals);
-const sabSimData = new SharedArrayBuffer(4 + 4 + 4); // dt + mouse x + mouse y
+// dt + mouse x + mouse y + touch down + screen width + screen height
+const sabSimData = new SharedArrayBuffer(4 + 4 + 4 + 4 + 4 + 4);
 const sabViewSimData = new Float32Array(sabSimData);
 
 let backbuffer = new ImageData(window.innerWidth, window.innerHeight);
@@ -28,10 +29,16 @@ window.addEventListener('resize', () => {
   canvas.height = window.innerHeight;
   backbuffer = new ImageData(canvas.width, canvas.height);
 });
-window.addEventListener('mousemove', e => {
+window.addEventListener('mousemove', (e) => {
   sabViewSimData[1] = e.clientX;
   sabViewSimData[2] = e.clientY;
 });
+window.addEventListener('mousedown', () => {
+  sabViewSimData[3] = 1;
+});
+window.addEventListener('mouseup', () => {
+  sabViewSimData[3] = 0;
+})
 
 for (let i = 0; i < PARTICLE_COUNT; i++) {
   sabViewParticles[i * stride] = Math.random() * canvas.width;
@@ -52,9 +59,12 @@ function render() {
     const y = sabViewParticles[i * 4 + 1];
     if (y < 0 || y > height) continue;
     const pixelIndex = ((y | 0) * width + (x | 0)) * 4;
-    backbuffer.data[pixelIndex] += 30; // R
-    backbuffer.data[pixelIndex + 1] += 40; // G
-    backbuffer.data[pixelIndex + 2] += 65; // B
+    const rx = x / width;
+    const ry = y / height;
+
+    backbuffer.data[pixelIndex] += 25 + 50 * rx; // R
+    backbuffer.data[pixelIndex + 1] += 40 + 50 * ry; // G
+    backbuffer.data[pixelIndex + 2] += 65 + 50 * (1 - rx); // B
     backbuffer.data[pixelIndex + 3] = 255; // Alpha
   }
 
