@@ -7,9 +7,9 @@ canvas.height = window.innerHeight;
 const SIGNAL_RUN = 0;
 const SIGNAL_PAUSE = 1;
 const SIGNAL_READY = 2;
-const PARTICLE_COUNT = 10_000_000;
+const PARTICLE_COUNT = 20_000_000;
 const CPU_CORES = navigator.hardwareConcurrency;
-const chunkSize = Math.floor(PARTICLE_COUNT/CPU_CORES);
+const chunkSize = Math.floor(PARTICLE_COUNT / CPU_CORES);
 const workerPool = [];
 
 const stride = 4; // x, y, dx, dy
@@ -20,14 +20,21 @@ const sabSignals = new SharedArrayBuffer(CPU_CORES);
 const sabViewSignals = new Uint8Array(sabSignals);
 // dt + mouse x + mouse y + touch down + screen width + screen height
 const sabSimData = new SharedArrayBuffer(4 + 4 + 4 + 4 + 4 + 4);
+const sabPixels = new SharedArrayBuffer(CPU_CORES * window.innerWidth * window.innerHeight * 3);
 const sabViewSimData = new Float32Array(sabSimData);
+const sabViewPixels = new Uint8Array(sabPixels);
 
 let backbuffer = new ImageData(window.innerWidth, window.innerHeight);
+
+sabViewSimData[4] = window.innerWidth;
+sabViewSimData[5] = window.innerHeight;
 
 window.addEventListener('resize', () => {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
   backbuffer = new ImageData(canvas.width, canvas.height);
+  sabViewSimData[4] = window.innerWidth;
+  sabViewSimData[5] = window.innerHeight;
 });
 window.addEventListener('mousemove', (e) => {
   sabViewSimData[1] = e.clientX;
@@ -51,21 +58,24 @@ function render() {
   const width = canvas.width;
   const height = canvas.height;
 
-  backbuffer.data.fill(0);
+  const pixelStride = width * height * 3;
 
-  for (let i = 0; i < PARTICLE_COUNT; i++) {
-    const x = sabViewParticles[i * 4];
-    if (x < 0 || x > width) continue;
-    const y = sabViewParticles[i * 4 + 1];
-    if (y < 0 || y > height) continue;
-    const pixelIndex = ((y | 0) * width + (x | 0)) * 4;
-    const rx = x / width;
-    const ry = y / height;
+  for (let i = 0; i < width * height; i++) {
+    let r = 0;
+    let g = 0;
+    let b = 0;
 
-    backbuffer.data[pixelIndex] += 25 + 50 * rx; // R
-    backbuffer.data[pixelIndex + 1] += 40 + 50 * ry; // G
-    backbuffer.data[pixelIndex + 2] += 65 + 50 * (1 - rx); // B
-    backbuffer.data[pixelIndex + 3] = 255; // Alpha
+    for (let j = 0; j < CPU_CORES; j++) {
+      const s = pixelStride * j;
+      r += sabViewPixels[s + i * 3];
+      g += sabViewPixels[s + i * 3 + 1];
+      b += sabViewPixels[s + i * 3 + 2];
+    }
+
+    backbuffer.data[i * 4] = r;
+    backbuffer.data[i * 4 + 1] = g;
+    backbuffer.data[i * 4 + 2] = b;
+    backbuffer.data[i * 4 + 3] = 255;
   }
 
   context.putImageData(backbuffer, 0, 0);
@@ -93,7 +103,8 @@ for (let i = 0; i < CPU_CORES; i++) {
     chunkSize,
     chunkOffset: chunkSize * i,
     stride,
-    sabSimData
+    sabSimData,
+    sabPixels: sabPixels
   });
 }
 

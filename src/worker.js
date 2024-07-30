@@ -12,14 +12,16 @@ onmessage = (event) => {
     chunkSize,
     chunkOffset,
     stride,
-    sabSimData
+    sabSimData,
+    sabPixels
   } = event.data;
 
   const particlesView = new Float32Array(sabParticles);
   const signalsView = new Uint8Array(sabSignals);
   const simDataView = new Float32Array(sabSimData);
+  const pixelsView = new Uint8Array(sabPixels);
   const dt = () => simDataView[0];
-  const input = () => [simDataView[1], simDataView[2], !!simDataView[3]];
+  const input = () => [simDataView[1], simDataView[2], !!simDataView[3], simDataView[4], simDataView[5]];
   signalsView[id] = SIGNAL_READY;
 
   console.log(`worker init ${id}`);
@@ -28,11 +30,14 @@ onmessage = (event) => {
     if (signalsView[id] !== SIGNAL_RUN) return;
     const delta = dt();
     const decay = 1 / (1 + delta);
-    const [mx, my, isTouch] = input();
+    const [mx, my, isTouch, width, height] = input();
 
+
+    const buffStride = width * height * 3
+    pixelsView.fill(0, buffStride * id, buffStride * id + buffStride);
     for (let i = chunkOffset; i < chunkOffset + chunkSize; i++) {
-      const x = particlesView[i * stride];
-      const y = particlesView[i * stride + 1];
+      let x = particlesView[i * stride];
+      let y = particlesView[i * stride + 1];
       let dx = particlesView[i * stride + 2] * decay;
       let dy = particlesView[i * stride + 3] * decay;
 
@@ -47,10 +52,23 @@ onmessage = (event) => {
         dy += dirY * force * delta;
       }
 
-      particlesView[i * stride] = x + dx * delta;
-      particlesView[i * stride + 1] = y + dy * delta;
+      x += dx * delta;
+      y += dy * delta;
+
+      particlesView[i * stride] = x;
+      particlesView[i * stride + 1] = y;
       particlesView[i * stride + 2] = dx;
       particlesView[i * stride + 3] = dy;
+
+      if (x < 0 || x >= width) continue;
+      if (y < 0 || y >= height) continue;
+      const pixelIndex = ((y | 0) * width + (x | 0)) * 3;
+      const rx = x / width;
+      const ry = y / height;
+
+      pixelsView[buffStride * id + pixelIndex] += 25 + 50 * rx; // R;
+      pixelsView[buffStride * id + pixelIndex + 1] += 40 + 50 * ry; // G
+      pixelsView[buffStride * id + pixelIndex + 2] += 65 + 50 * (1 - rx); // B
     }
 
     signalsView[id] = SIGNAL_READY;
