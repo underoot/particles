@@ -1,14 +1,13 @@
 const canvas = document.getElementById('canvas');
 const context = canvas.getContext('2d');
 
-
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
 const SIGNAL_RUN = 0;
 const SIGNAL_PAUSE = 1;
 const SIGNAL_READY = 2;
-const PARTICLE_COUNT = 3_000_000;
+const PARTICLE_COUNT = 2_000_000;
 const CPU_CORES = navigator.hardwareConcurrency;
 const WORKER_COUNT = CPU_CORES;
 const chunkSize = Math.floor(PARTICLE_COUNT / CPU_CORES);
@@ -23,23 +22,30 @@ const sabSignals = new SharedArrayBuffer(CPU_CORES);
 const sabViewSignals = new Uint8Array(sabSignals);
 // dt + mouse x + mouse y + touch down + screen width + screen height
 const sabSimData = new SharedArrayBuffer(4 + 4 + 4 + 4 + 4 + 4);
-const sabPixels = new SharedArrayBuffer(CPU_CORES * window.innerWidth * window.innerHeight * 3);
 const sabViewSimData = new Float32Array(sabSimData);
-const sabViewPixels = new Uint8Array(sabPixels);
 let id = 0;
 
 let backbuffer = new ImageData(window.innerWidth, window.innerHeight);
+let sabViewPixelsA, sabViewPixelsB, activePixelBuff;
 
-sabViewSimData[4] = window.innerWidth;
-sabViewSimData[5] = window.innerHeight;
-
-window.addEventListener('resize', () => {
+function resize() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
   backbuffer = new ImageData(canvas.width, canvas.height);
   sabViewSimData[4] = window.innerWidth;
   sabViewSimData[5] = window.innerHeight;
-});
+  sabViewPixelsA = new Uint8Array(
+    new SharedArrayBuffer(window.innerWidth * window.innerHeight * 3 * WORKER_COUNT)
+  );
+  sabViewPixelsB = new Uint8Array(
+    new SharedArrayBuffer(window.innerWidth * window.innerHeight * 3 * WORKER_COUNT)
+  );
+  activePixelBuff = sabViewPixelsB;
+}
+
+resize();
+
+window.addEventListener('resize', resize);
 window.addEventListener('mousemove', (e) => {
   sabViewSimData[1] = e.clientX;
   sabViewSimData[2] = e.clientY;
@@ -58,7 +64,7 @@ for (let i = 0; i < PARTICLE_COUNT; i++) {
   sabViewParticles[i * stride + 3] = (Math.random() * 2 - 1) * 10;
 }
 
-function render() {
+function render(activePixelBuff) {
   const width = canvas.width;
   const height = canvas.height;
 
@@ -71,9 +77,9 @@ function render() {
 
     for (let j = 0; j < CPU_CORES; j++) {
       const s = pixelStride * j;
-      r += sabViewPixels[s + i * 3];
-      g += sabViewPixels[s + i * 3 + 1];
-      b += sabViewPixels[s + i * 3 + 2];
+      r += activePixelBuff[s + i * 3];
+      g += activePixelBuff[s + i * 3 + 1];
+      b += activePixelBuff[s + i * 3 + 2];
     }
 
     backbuffer.data[i * 4] = r;
@@ -92,8 +98,12 @@ function run(currentTime) {
   sabViewSimData[0] = dt;
   activeWorkers = WORKER_COUNT;
   workerPool.forEach((worker, i) => {
-    worker.postMessage({});
+    worker.postMessage({
+      sabPixels: activePixelBuff,
+    });
   });
+  activePixelBuff = activePixelBuff === sabViewPixelsA ? sabViewPixelsB : sabViewPixelsA;
+  render(activePixelBuff);
 }
 
 for (let i = 0; i < WORKER_COUNT; i++) {
@@ -108,7 +118,7 @@ for (let i = 0; i < WORKER_COUNT; i++) {
     chunkOffset: chunkSize * i,
     stride,
     sabSimData,
-    sabPixels: sabPixels
+    sabPixels: activePixelBuff
   });
 }
 
@@ -117,6 +127,5 @@ function onWorkerMessage() {
   if (activeWorkers !== 0) {
     return;
   }
-  render();
   requestAnimationFrame(run);
 }

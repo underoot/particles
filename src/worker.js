@@ -23,12 +23,13 @@ onmessage = (event) => {
     stride = event.data.stride;
     sabSimData = event.data.sabSimData;
     sabPixels = event.data.sabPixels;
+  } else if (event.data.sabPixels) {
+    sabPixels = event.data.sabPixels;
   }
 
   const particlesView = new Float32Array(sabParticles);
   const signalsView = new Uint8Array(sabSignals);
   const simDataView = new Float32Array(sabSimData);
-  const pixelsView = new Uint8Array(sabPixels);
   const dt = () => simDataView[0];
   const input = () => [simDataView[1], simDataView[2], !!simDataView[3], simDataView[4], simDataView[5]];
   signalsView[id] = SIGNAL_READY;
@@ -39,7 +40,7 @@ onmessage = (event) => {
 
 
   const buffStride = width * height * 3
-  pixelsView.fill(0, buffStride * id, buffStride * id + buffStride);
+  sabPixels.fill(0, buffStride * id, buffStride * id + buffStride);
   for (let i = chunkOffset; i < chunkOffset + chunkSize; i++) {
     let x = particlesView[i * stride];
     let y = particlesView[i * stride + 1];
@@ -71,9 +72,9 @@ onmessage = (event) => {
     const rx = x / width;
     const ry = y / height;
 
-    pixelsView[buffStride * id + pixelIndex] += 25 + 50 * rx; // R;
-    pixelsView[buffStride * id + pixelIndex + 1] += 40 + 50 * ry; // G
-    pixelsView[buffStride * id + pixelIndex + 2] += 65 + 50 * (1 - rx); // B
+    sabPixels[buffStride * id + pixelIndex] += 25 + 50 * rx; // R;
+    sabPixels[buffStride * id + pixelIndex + 1] += 40 + 50 * ry; // G
+    sabPixels[buffStride * id + pixelIndex + 2] += 65 + 50 * (1 - rx); // B
   }
 
   self.postMessage({ id: SIGNAL_READY });
