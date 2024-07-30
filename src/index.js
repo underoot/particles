@@ -1,16 +1,19 @@
 const canvas = document.getElementById('canvas');
 const context = canvas.getContext('2d');
 
+
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
 const SIGNAL_RUN = 0;
 const SIGNAL_PAUSE = 1;
 const SIGNAL_READY = 2;
-const PARTICLE_COUNT = 20_000_000;
+const PARTICLE_COUNT = 3_000_000;
 const CPU_CORES = navigator.hardwareConcurrency;
+const WORKER_COUNT = CPU_CORES;
 const chunkSize = Math.floor(PARTICLE_COUNT / CPU_CORES);
 const workerPool = [];
+let activeWorkers = WORKER_COUNT;
 
 const stride = 4; // x, y, dx, dy
 const byte_stride = stride * 4;
@@ -23,6 +26,7 @@ const sabSimData = new SharedArrayBuffer(4 + 4 + 4 + 4 + 4 + 4);
 const sabPixels = new SharedArrayBuffer(CPU_CORES * window.innerWidth * window.innerHeight * 3);
 const sabViewSimData = new Float32Array(sabSimData);
 const sabViewPixels = new Uint8Array(sabPixels);
+let id = 0;
 
 let backbuffer = new ImageData(window.innerWidth, window.innerHeight);
 
@@ -86,16 +90,16 @@ function run(currentTime) {
   const dt = Math.min(1, (currentTime - lastTime) / 1000);
   lastTime = currentTime;
   sabViewSimData[0] = dt;
-  for (let i = 0; i < CPU_CORES; i++) {
-    sabViewSignals[i] = SIGNAL_RUN;
-  }
-  render();
-  requestAnimationFrame(run);
+  activeWorkers = WORKER_COUNT;
+  workerPool.forEach((worker, i) => {
+    worker.postMessage({});
+  });
 }
 
-for (let i = 0; i < CPU_CORES; i++) {
+for (let i = 0; i < WORKER_COUNT; i++) {
   const worker = new Worker('./src/worker.js');
   workerPool.push(worker);
+  worker.onmessage = onWorkerMessage;
   worker.postMessage({
     sabParticles,
     sabSignals,
@@ -108,11 +112,11 @@ for (let i = 0; i < CPU_CORES; i++) {
   });
 }
 
-const handle = setInterval(() => {
-  console.log('waiting for workers...', sabViewSignals);
-  if (sabViewSignals[sabViewSignals.length - 1] !== SIGNAL_READY) {
+function onWorkerMessage() {
+  activeWorkers--;
+  if (activeWorkers !== 0) {
     return;
   }
-  clearInterval(handle);
+  render();
   requestAnimationFrame(run);
-}, 100);
+}
